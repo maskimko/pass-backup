@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/howeyc/gopass"
+	"github.com/pborman/getopt"
 	"golang.org/x/crypto/openpgp"
 )
 
@@ -17,7 +18,13 @@ const secretKeyring = prefix + ".gnupg/secring.gpg"
 const publicKeyring = prefix + ".gnupg/pubring.gpg"
 const myEmail = "mshkolnyi@intellias.com"
 
-var passphrase string
+type gpgError struct {
+	message string
+}
+
+func (e *gpgError) Error() string {
+	return e.message
+}
 
 func listEntities(entities []*openpgp.Entity) {
 	var e openpgp.Entity
@@ -30,12 +37,16 @@ func listEntities(entities []*openpgp.Entity) {
 	}
 }
 
-func getEntityByEmail(entities []*openpgp.Entity, email string) []*openpgp.Entity {
+func getEntityByEmail(entities []*openpgp.Entity, email *string) []*openpgp.Entity {
+	if email == nil || *email == "" {
+		log.Println("Empty gpg identity query")
+		return nil
+	}
 	for i := range entities {
 		e := *entities[i]
 		for k := range e.Identities {
 			id := e.Identities[k]
-			if id.UserId.Email == email {
+			if id.UserId.Email == *email {
 				ents := make([]*openpgp.Entity, 1)
 				ents[0] = &e
 				return ents
@@ -56,7 +67,9 @@ func encTest(secretString string) (string, error) {
 		return "", err
 	}
 	listEntities(entityList)
-	myList := getEntityByEmail(entityList, myEmail)
+	var mail string
+	mail = myEmail
+	myList := getEntityByEmail(entityList, &mail)
 	listEntities(myList)
 	buf := new(bytes.Buffer)
 	w, err := openpgp.Encrypt(buf, myList, nil, nil, nil)
@@ -80,6 +93,42 @@ func encTest(secretString string) (string, error) {
 	encStr := base64.StdEncoding.EncodeToString(bytes)
 
 	log.Println("Encrypted secret: ", encStr)
+	return encStr, nil
+}
+
+func enc(secretString string, emailId *string) (string, error) {
+	keyringFileBuffer, _ := os.Open(publicKeyring)
+	defer keyringFileBuffer.Close()
+	entityList, err := openpgp.ReadKeyRing(keyringFileBuffer)
+	if err != nil {
+		return "", err
+	}
+	myList := getEntityByEmail(entityList, emailId)
+	if myList == nil {
+		err := &gpgError{"There is no such key with provided identity email: \"" + *emailId + "\""}
+		return "", err
+	}
+	buf := new(bytes.Buffer)
+	w, err := openpgp.Encrypt(buf, myList, nil, nil, nil)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = w.Write([]byte(mySecretString))
+	if err != nil {
+		return "", err
+	}
+	err = w.Close()
+	if err != nil {
+		return "", err
+	}
+
+	bytes, err := ioutil.ReadAll(buf)
+	if err != nil {
+		return "", err
+	}
+	encStr := base64.StdEncoding.EncodeToString(bytes)
+
 	return encStr, nil
 }
 
@@ -127,12 +176,22 @@ func decTest(encString string, passphrase string) (string, error) {
 }
 
 func main() {
+	optEmailId := getopt.StringLong("email", 'e', "", "Your PGP identity email address")
+	helpFlag := getopt.Bool('?', "Display help")
+	getopt.Parse()
+	if *helpFlag {
+		getopt.Usage()
+		os.Exit(0)
+	}
+
+	//Obtain the passphrase
 	log.Printf("Input the passphrase: ")
 	passphrase, err := gopass.GetPasswd()
 	if err != nil {
 		log.Fatal(err)
 	}
-	encStr, err := encTest(mySecretString)
+
+	encStr, err := enc(mySecretString, optEmailId)
 	if err != nil {
 		log.Fatal(err)
 	}
