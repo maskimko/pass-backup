@@ -6,6 +6,9 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
+
+	"path/filepath"
 
 	"github.com/howeyc/gopass"
 	"github.com/pborman/getopt"
@@ -17,6 +20,69 @@ const prefix = "/home/maskimko/"
 const secretKeyring = prefix + ".gnupg/secring.gpg"
 const publicKeyring = prefix + ".gnupg/pubring.gpg"
 const myEmail = "mshkolnyi@intellias.com"
+const passwordStore = ".password-store"
+
+func getUserDir() string {
+	//Will work on UNIX systems only
+	var home string = os.Getenv("HOME")
+	return home
+}
+
+func checkGnuPass(userDir string) *string {
+	//returns referense for normalized path of GNU pass password storage if exists
+	//otherwise returns nil
+	var passHome string = userDir
+	if !strings.HasSuffix(passHome, "/") {
+		passHome = passHome + "/"
+	}
+	passHome = passHome + passwordStore
+	fi, err := os.Stat(passHome)
+	if os.IsNotExist(err) {
+		log.Println("Cannot find GNU Pass store", err)
+		return nil
+	}
+	if !fi.IsDir() {
+		log.Println("GNU Pass store is not a directory!")
+		return nil
+	}
+	return &passHome
+}
+
+func getPassFiles(passPrefix string) ([]*string, error) {
+	//Get list of pass files starting from prefix directory
+	passHomeRef := checkGnuPass(getUserDir())
+	if passHomeRef == nil {
+		return make([]*string, 0), &gpgError{"Cannot find GNU Pass store"}
+	}
+	var entryPoint string = *passHomeRef
+	if !strings.HasSuffix(entryPoint, "/") {
+		entryPoint = entryPoint + "/"
+	}
+	if passPrefix != "" {
+		entryPoint = entryPoint + passPrefix
+		if _, err := os.Stat(entryPoint); os.IsNotExist(err) {
+			log.Printf("Cannot find directory specified by prefix %s. %s", passPrefix, err)
+			return nil, err
+		}
+	}
+	passwords := make([]*string, 0, 10)
+	err := filepath.Walk(entryPoint, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("Handling error while accessing path %q: %v\n", entryPoint, err)
+		}
+		if info.IsDir() && info.Name() == ".git" {
+			log.Println("Skipping Git directory")
+			return filepath.SkipDir
+		}
+		passwords = append(passwords, &path)
+		return nil
+	})
+	if err != nil {
+		log.Println("Error while walking the password store", err)
+		return passwords, err
+	}
+	return passwords, nil
+}
 
 type gpgError struct {
 	message string
@@ -182,6 +248,13 @@ func main() {
 	if *helpFlag {
 		getopt.Usage()
 		os.Exit(0)
+	}
+	passes, err := getPassFiles("")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for p := range passes {
+		log.Println(*passes[p])
 	}
 
 	//Obtain the passphrase
