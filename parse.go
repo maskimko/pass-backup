@@ -22,6 +22,77 @@ const publicKeyring = prefix + ".gnupg/pubring.gpg"
 const myEmail = "mshkolnyi@intellias.com"
 const passwordStore = ".password-store"
 
+type gpgError struct {
+	message string
+}
+
+func (e *gpgError) Error() string {
+	return e.message
+}
+
+type gpgCredentilas struct {
+	emailId    string
+	passphrase string
+}
+
+func decrypt(data *[]byte, creds *gpgCredentilas) (string, error) {
+	var entity *openpgp.Entity
+	var entityList openpgp.EntityList
+
+	keyringFileBuffer, err := os.Open(secretKeyring)
+	if err != nil {
+		return "", err
+	}
+	defer keyringFileBuffer.Close()
+	entityList, err = openpgp.ReadKeyRing(keyringFileBuffer)
+	if err != nil {
+		return "", err
+	}
+	entity = getEntityByEmail(entityList, &creds.emailId)
+	if entity == nil {
+		err := &gpgError{"There is no such key with provided identity email: \"" + creds.emailId + "\""}
+		return "", err
+	}
+	passphraseByte := []byte(creds.passphrase)
+	entity.PrivateKey.Decrypt(passphraseByte)
+	for _, subkey := range entity.Subkeys {
+		subkey.PrivateKey.Decrypt(passphraseByte)
+	}
+
+	messageDetails, err := openpgp.ReadMessage(bytes.NewBuffer(*data), entityList, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	bytes, err := ioutil.ReadAll(messageDetails.UnverifiedBody)
+	if err != nil {
+		return "", err
+	}
+	decData := string(bytes)
+	return decData, nil
+}
+
+func readSecretData(fileNames []*string) []*[]byte {
+	var secretData []*[]byte = make([]*[]byte, len(fileNames))
+	for i := range fileNames {
+		dat, err := ioutil.ReadFile(*fileNames[i])
+		if err != nil {
+			log.Println("Cannot read file contents:", *fileNames[i])
+		}
+		secretData[i] = &dat
+	}
+	return secretData
+}
+
+func listSecretData(data []*[]byte, creds *gpgCredentilas) {
+	for i := range data {
+		decData, err := decrypt(data[i], creds)
+		if err != nil {
+			log.Println("Cannot decrypt", err)
+		}
+		log.Println(decData)
+	}
+}
+
 func getUserDir() string {
 	//Will work on UNIX systems only
 	var home string = os.Getenv("HOME")
@@ -74,7 +145,9 @@ func getPassFiles(passPrefix string) ([]*string, error) {
 			log.Println("Skipping Git directory")
 			return filepath.SkipDir
 		}
-		passwords = append(passwords, &path)
+		if !info.IsDir() {
+			passwords = append(passwords, &path)
+		}
 		return nil
 	})
 	if err != nil {
@@ -82,14 +155,6 @@ func getPassFiles(passPrefix string) ([]*string, error) {
 		return passwords, err
 	}
 	return passwords, nil
-}
-
-type gpgError struct {
-	message string
-}
-
-func (e *gpgError) Error() string {
-	return e.message
 }
 
 func listEntities(entities []*openpgp.Entity) {
@@ -103,7 +168,7 @@ func listEntities(entities []*openpgp.Entity) {
 	}
 }
 
-func getEntityByEmail(entities []*openpgp.Entity, email *string) []*openpgp.Entity {
+func getEntityByEmail(entities []*openpgp.Entity, email *string) *openpgp.Entity {
 	if email == nil || *email == "" {
 		log.Println("Empty gpg identity query")
 		return nil
@@ -113,53 +178,11 @@ func getEntityByEmail(entities []*openpgp.Entity, email *string) []*openpgp.Enti
 		for k := range e.Identities {
 			id := e.Identities[k]
 			if id.UserId.Email == *email {
-				ents := make([]*openpgp.Entity, 1)
-				ents[0] = &e
-				return ents
+				return &e
 			}
 		}
 	}
 	return nil
-}
-
-func encTest(secretString string) (string, error) {
-	log.Println("Secret to hide:", secretString)
-	log.Println("Public Keyring:", publicKeyring)
-
-	keyringFileBuffer, _ := os.Open(publicKeyring)
-	defer keyringFileBuffer.Close()
-	entityList, err := openpgp.ReadKeyRing(keyringFileBuffer)
-	if err != nil {
-		return "", err
-	}
-	listEntities(entityList)
-	var mail string
-	mail = myEmail
-	myList := getEntityByEmail(entityList, &mail)
-	listEntities(myList)
-	buf := new(bytes.Buffer)
-	w, err := openpgp.Encrypt(buf, myList, nil, nil, nil)
-	if err != nil {
-		return "", err
-	}
-
-	_, err = w.Write([]byte(mySecretString))
-	if err != nil {
-		return "", err
-	}
-	err = w.Close()
-	if err != nil {
-		return "", err
-	}
-
-	bytes, err := ioutil.ReadAll(buf)
-	if err != nil {
-		return "", err
-	}
-	encStr := base64.StdEncoding.EncodeToString(bytes)
-
-	log.Println("Encrypted secret: ", encStr)
-	return encStr, nil
 }
 
 func enc(secretString string, emailId *string) (string, error) {
@@ -169,13 +192,13 @@ func enc(secretString string, emailId *string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	myList := getEntityByEmail(entityList, emailId)
-	if myList == nil {
+	entity := getEntityByEmail(entityList, emailId)
+	if entity == nil {
 		err := &gpgError{"There is no such key with provided identity email: \"" + *emailId + "\""}
 		return "", err
 	}
 	buf := new(bytes.Buffer)
-	w, err := openpgp.Encrypt(buf, myList, nil, nil, nil)
+	w, err := openpgp.Encrypt(buf, []*openpgp.Entity{entity}, nil, nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -242,19 +265,18 @@ func decTest(encString string, passphrase string) (string, error) {
 }
 
 func main() {
+
 	optEmailId := getopt.StringLong("email", 'e', "", "Your PGP identity email address")
+	optPassPrefix := getopt.StringLong("prefix", 'p', "/", "Which directory in password store should be considered as entry point")
 	helpFlag := getopt.Bool('?', "Display help")
 	getopt.Parse()
 	if *helpFlag {
 		getopt.Usage()
 		os.Exit(0)
 	}
-	passes, err := getPassFiles("")
+	passes, err := getPassFiles(*optPassPrefix)
 	if err != nil {
 		log.Fatal(err)
-	}
-	for p := range passes {
-		log.Println(*passes[p])
 	}
 
 	//Obtain the passphrase
@@ -264,6 +286,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var creds *gpgCredentilas = &gpgCredentilas{emailId: *optEmailId, passphrase: string(passphrase)}
 	encStr, err := enc(mySecretString, optEmailId)
 	if err != nil {
 		log.Fatal(err)
@@ -273,5 +296,9 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Println("Decrypted Secret:", decStr)
+
+	encData := readSecretData(passes)
+	listSecretData(encData, creds)
+
 	log.Println("End of program")
 }
