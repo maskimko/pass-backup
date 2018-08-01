@@ -268,6 +268,7 @@ func main() {
 
 	optEmailId := getopt.StringLong("email", 'e', "", "Your PGP identity email address")
 	optPassPrefix := getopt.StringLong("prefix", 'p', "/", "Which directory in password store should be considered as entry point")
+	optPasswordSafeFile := getopt.StringLong("passwordSafe", 'P', "", "Exported CSV file with PasswordSafe data")
 	helpFlag := getopt.Bool('?', "Display help")
 	getopt.Parse()
 	if *helpFlag {
@@ -299,6 +300,10 @@ func main() {
 
 	encData := readSecretData(passes)
 	listSecretData(encData, creds)
+
+	if optPasswordSafeFile != nil && *optPasswordSafeFile != "" {
+		readRecords(*optPasswordSafeFile, nil, nil)
+	}
 
 	log.Println("End of program")
 }
