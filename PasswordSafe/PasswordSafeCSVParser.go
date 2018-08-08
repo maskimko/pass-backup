@@ -1,4 +1,4 @@
-package main
+package PasswordSafe
 
 import (
 	"encoding/csv"
@@ -24,7 +24,7 @@ func (e *fieldNumberError) Error() string {
 	return e.reason
 }
 
-func readRecords(passwordsCsvFile string, delimeter *rune, comment *rune) ([]*passwordSafeRecord, error) {
+func ReadRecords(passwordsCsvFile string, delimeter *rune, comment *rune) ([]*passwordSafeRecord, error) {
 	var passwords []*passwordSafeRecord = make([]*passwordSafeRecord, 0)
 	pf, err := os.Open(passwordsCsvFile)
 	defer pf.Close()

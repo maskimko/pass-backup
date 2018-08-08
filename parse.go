@@ -1,14 +1,16 @@
 package main
 
 import (
+	"PassEncBkp/Pass"
+	"PassEncBkp/PasswordSafe"
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
-
 	"path/filepath"
+	"strings"
 
 	"github.com/howeyc/gopass"
 	"github.com/pborman/getopt"
@@ -35,23 +37,23 @@ type gpgCredentilas struct {
 	passphrase string
 }
 
-func decrypt(data *[]byte, creds *gpgCredentilas) (string, error) {
+func decrypt(data *[]byte, creds *gpgCredentilas) (*string, error) {
 	var entity *openpgp.Entity
 	var entityList openpgp.EntityList
 
 	keyringFileBuffer, err := os.Open(secretKeyring)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer keyringFileBuffer.Close()
 	entityList, err = openpgp.ReadKeyRing(keyringFileBuffer)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	entity = getEntityByEmail(entityList, &creds.emailId)
 	if entity == nil {
 		err := &gpgError{"There is no such key with provided identity email: \"" + creds.emailId + "\""}
-		return "", err
+		return nil, err
 	}
 	passphraseByte := []byte(creds.passphrase)
 	entity.PrivateKey.Decrypt(passphraseByte)
@@ -61,14 +63,14 @@ func decrypt(data *[]byte, creds *gpgCredentilas) (string, error) {
 
 	messageDetails, err := openpgp.ReadMessage(bytes.NewBuffer(*data), entityList, nil, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	bytes, err := ioutil.ReadAll(messageDetails.UnverifiedBody)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	decData := string(bytes)
-	return decData, nil
+	return &decData, nil
 }
 
 func readSecretData(fileNames []*string) []*[]byte {
@@ -89,8 +91,26 @@ func listSecretData(data []*[]byte, creds *gpgCredentilas) {
 		if err != nil {
 			log.Println("Cannot decrypt", err)
 		}
-		log.Println(decData)
+		log.Println(*decData)
 	}
+}
+
+func parseSecretData(data []*[]byte, creds *gpgCredentilas) ([]*Pass.PassRecord, error) {
+	var pra []*Pass.PassRecord = make([]*Pass.PassRecord, len(data))
+	for i := range data {
+		decData, err := decrypt(data[i], creds)
+		if err != nil {
+			log.Println("Cannot decrypt", err)
+			return pra, err
+		}
+		passRecord, err := Pass.Parse(decData, nil)
+		if err != nil {
+			log.Printf("Cannot parse decrypted data. Details: %s", err)
+			return pra, err
+		}
+		pra[i] = passRecord
+	}
+	return pra, nil
 }
 
 func getUserDir() string {
@@ -145,7 +165,7 @@ func getPassFiles(passPrefix string) ([]*string, error) {
 			log.Println("Skipping Git directory")
 			return filepath.SkipDir
 		}
-		if !info.IsDir() {
+		if !info.IsDir() && strings.HasSuffix(path, ".gpg") {
 			passwords = append(passwords, &path)
 		}
 		return nil
@@ -275,10 +295,10 @@ func main() {
 		getopt.Usage()
 		os.Exit(0)
 	}
-	passes, err := getPassFiles(*optPassPrefix)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// passes, err := getPassFiles(*optPassPrefix)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	//Obtain the passphrase
 	log.Printf("Input the passphrase: ")
@@ -287,22 +307,34 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var creds *gpgCredentilas = &gpgCredentilas{emailId: *optEmailId, passphrase: string(passphrase)}
-	encStr, err := enc(mySecretString, optEmailId)
-	if err != nil {
-		log.Fatal(err)
-	}
-	decStr, err := decTest(encStr, string(passphrase))
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("Decrypted Secret:", decStr)
+	var creds *Pass.GpgCredentilas = &Pass.GpgCredentilas{EmailId: *optEmailId, Passphrase: string(passphrase)}
+	// encStr, err := enc(mySecretString, optEmailId)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// decStr, err := decTest(encStr, string(passphrase))
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// log.Println("Decrypted Secret:", decStr)
 
-	encData := readSecretData(passes)
-	listSecretData(encData, creds)
+	// encData := readSecretData(passes)
+	// listSecretData(encData, creds)
+	// decData, err := parseSecretData(encData, creds)
+	// for i := range decData {
+	// 	fmt.Printf("Pass record:\n\t%v\n", *decData[i])
+	// }
+
+	precs, err := Pass.GetPassRecords(*optPassPrefix, creds)
+	if err != nil {
+		log.Println("Cannot get Pass passwords", err)
+	}
+	for i := range precs {
+		fmt.Printf("Pass record:\n\t%v\n", *precs[i])
+	}
 
 	if optPasswordSafeFile != nil && *optPasswordSafeFile != "" {
-		readRecords(*optPasswordSafeFile, nil, nil)
+		PasswordSafe.ReadRecords(*optPasswordSafeFile, nil, nil)
 	}
 
 	log.Println("End of program")
