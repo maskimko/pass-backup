@@ -9,14 +9,26 @@ import (
 	"golang.org/x/crypto/openpgp"
 )
 
-// NOTE: Dynamic user dir
-const prefix = "/home/maskimko/"
-const secretKeyring = prefix + ".gnupg/secring.gpg"
-const publicKeyring = prefix + ".gnupg/pubring.gpg"
+// const secretKeyring = prefix + ".gnupg/secring.gpg"
+// const publicKeyring = prefix + ".gnupg/pubring.gpg"
 
 type GpgCredentilas struct {
 	EmailId    string
 	Passphrase string
+}
+
+func getUserDir() string {
+	//Will work on UNIX systems only
+	var home string = os.Getenv("HOME")
+	return home
+}
+
+func getSecRing() string {
+	return getUserDir() + "/.gnupg/secring.gpg"
+}
+
+func getPubRing() string {
+	return getUserDir() + "/.gnupg/pubring.gpg"
 }
 
 func getEntityByEmail(entities []*openpgp.Entity, email *string) *openpgp.Entity {
@@ -40,7 +52,7 @@ func decrypt(data *[]byte, creds *GpgCredentilas) (*string, error) {
 	var entity *openpgp.Entity
 	var entityList openpgp.EntityList
 
-	keyringFileBuffer, err := os.Open(secretKeyring)
+	keyringFileBuffer, err := os.Open(getSecRing())
 	if err != nil {
 		return nil, err
 	}

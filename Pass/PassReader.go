@@ -31,11 +31,6 @@ type incorrectKeyError struct {
 func (ie *incorrectKeyError) Error() string {
 	return fmt.Sprintf("This data is not encrypted with key %s", ie.emailId)
 }
-func getUserDir() string {
-	//Will work on UNIX systems only
-	var home string = os.Getenv("HOME")
-	return home
-}
 
 func checkGnuPass(userDir string) *string {
 	//returns referense for normalized path of GNU pass password storage if exists
