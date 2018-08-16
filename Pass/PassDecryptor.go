@@ -62,6 +62,10 @@ func decrypt(data *[]byte, creds *GpgCredentilas) (*string, error) {
 
 	messageDetails, err := openpgp.ReadMessage(bytes.NewBuffer(*data), entityList, nil, nil)
 	if err != nil {
+		if err.Error() == "openpgp: incorrect key" {
+
+			return nil, &incorrectKeyError{creds.EmailId}
+		}
 		return nil, err
 	}
 	bytes, err := ioutil.ReadAll(messageDetails.UnverifiedBody)

@@ -20,14 +20,21 @@ type gpgError struct {
 	message string
 }
 
+func (e *gpgError) Error() string {
+	return e.message
+}
+
+type incorrectKeyError struct {
+	emailId string
+}
+
+func (ie *incorrectKeyError) Error() string {
+	return fmt.Sprintf("This data is not encrypted with key %s", ie.emailId)
+}
 func getUserDir() string {
 	//Will work on UNIX systems only
 	var home string = os.Getenv("HOME")
 	return home
-}
-
-func (e *gpgError) Error() string {
-	return e.message
 }
 
 func checkGnuPass(userDir string) *string {
@@ -116,7 +123,7 @@ func parseSecretData(data *[]fileDataMap, creds *GpgCredentilas) ([]*PassRecord,
 		var fdm fileDataMap = (*data)[i]
 		decData, err := decrypt(fdm.data, creds)
 		if err != nil {
-			log.Println("Cannot decrypt", err)
+			err = &gpgError{fmt.Sprintf("Cannot decrypt file %s\nDetails: %v\n", fdm.fileName, err)}
 			return pra, err
 		}
 		passRecord, err := Parse(decData, parseLocation(fdm.fileName))
@@ -133,9 +140,14 @@ func GetPassRecords(prefix string, creds *GpgCredentilas) ([]*PassRecord, error)
 	pf, err := getPassFiles(prefix)
 	if err != nil {
 		log.Printf("Was not able to get password files %v", err)
+		return nil, err
 	}
 	dataMap := readSecretData(pf)
 	decData, err := parseSecretData(dataMap, creds)
+	if err != nil {
+		log.Printf("Was not able to decrypt password files. %v", err)
+		return nil, err
+	}
 	for i := range decData {
 		fmt.Printf("Pass record:\n\t%v\n", *decData[i])
 	}
