@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const passwordStore = ".password-store"
@@ -53,14 +54,30 @@ func checkGnuPass(userDir string) *string {
 }
 
 func readSecretData(fileNames *[]string) *[]fileDataMap {
-	var secretData []fileDataMap = make([]fileDataMap, len(*fileNames))
+	var wg sync.WaitGroup
+	sdchan := make(chan *fileDataMap)
+	wg.Add(len(*fileNames))
+	var secretData []fileDataMap = make([]fileDataMap, 0)
+
 	for i := range *fileNames {
-		dat, err := ioutil.ReadFile((*fileNames)[i])
-		if err != nil {
-			log.Println("Cannot read file contents:", (*fileNames)[i])
-		}
-		secretData[i] = fileDataMap{fileName: (*fileNames)[i], data: &dat}
+		go func(fn string) {
+			defer wg.Done()
+			dat, err := ioutil.ReadFile(fn)
+			if err != nil {
+				log.Println("Cannot read file contents:", fn)
+			} else {
+				sdchan <- &fileDataMap{fileName: fn, data: &dat}
+			}
+		}((*fileNames)[i])
 	}
+	go func() {
+		for i := range sdchan {
+			secretData = append(secretData, *i)
+		}
+	}()
+	wg.Wait()
+	close(sdchan)
+
 	return &secretData
 }
 
