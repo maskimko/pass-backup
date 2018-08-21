@@ -2,7 +2,6 @@ package PasswordSafe
 
 import (
 	"encoding/csv"
-	"fmt"
 	"io"
 	"os"
 )
@@ -50,7 +49,6 @@ func ReadRecords(passwordsCsvFile string, delimeter *rune, comment *rune) ([]*pa
 			return nil, &fieldNumberError{reason: "Cannot add to struct more than 6 fields"}
 		}
 		var psr passwordSafeRecord = passwordSafeRecord{Title: record[0], Category: record[1], Username: record[2], Password: record[3], Website: record[4], Comments: record[5]}
-		fmt.Printf("%v\n", psr)
 		passwords = append(passwords, &psr)
 	}
 	return passwords, nil
