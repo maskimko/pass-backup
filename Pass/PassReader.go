@@ -160,8 +160,5 @@ func GetPassRecords(prefix string, creds *GpgCredentilas) ([]*PassRecord, error)
 		log.Printf("Was not able to decrypt password files. %v", err)
 		return nil, err
 	}
-	for i := range decData {
-		fmt.Printf("Pass record:\n\t%v\n", *decData[i])
-	}
 	return decData, nil
 }

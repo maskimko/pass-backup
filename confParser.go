@@ -11,6 +11,7 @@ type config struct {
 	GpgPassword      string
 	PasswordSafeFile string
 	Prefix           string
+	Output           string
 }
 
 var configFile string
@@ -25,6 +26,7 @@ func readConfiguration(sourceFile string) (*config, error) {
 	var gpgPass string = ""
 	var psf string = ""
 	var prefix string = ""
+	var output string = ""
 	for i := range lines {
 		trimmed := strings.TrimSpace(lines[i])
 		if len(trimmed) == 0 {
@@ -40,20 +42,22 @@ func readConfiguration(sourceFile string) (*config, error) {
 			log.Printf("Cannot parse configuration line %s\n", trimmed)
 		} else {
 			switch strings.TrimSpace(keyval[0]) {
-			case "email":
+			case "decrypt_email":
 				email = strings.TrimSpace(keyval[1])
-			case "gpg_key_id":
+			case "decrypt_gpg_key_id":
 				email = strings.TrimSpace(keyval[1])
-			case "gpg_key_password":
+			case "decrypt_gpg_key_password":
 				gpgPass = strings.TrimSpace(keyval[1])
 			case "password_safe_file":
 				psf = strings.TrimSpace(keyval[1])
 			case "prefix":
 				prefix = strings.TrimSpace(keyval[1])
+			case "output":
+				output = strings.TrimSpace(keyval[1])
 			default:
 				log.Printf("Don't know how to handle \"%s\" configuration statement\n", trimmed)
 			}
 		}
 	}
-	return &config{GpgId: email, GpgPassword: gpgPass, PasswordSafeFile: psf, Prefix: prefix}, nil
+	return &config{GpgId: email, GpgPassword: gpgPass, PasswordSafeFile: psf, Prefix: prefix, Output: output}, nil
 }

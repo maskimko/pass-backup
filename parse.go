@@ -19,6 +19,7 @@ func main() {
 	optPassPrefix := getopt.StringLong("prefix", 'p', "/", "Which directory in password store should be considered as entry point")
 	optPasswordSafeFile := getopt.StringLong("PasswordSafe", 'P', "", "Exported CSV file with PasswordSafe data")
 	optConfigurationFile := getopt.StringLong("config", 'c', "PassEncBkp.conf", "Configuration file")
+	optOutputFile := getopt.StringLong("output", 'o', "", "Output file to save merged passwords")
 	helpFlag := getopt.Bool('?', "Display help")
 	getopt.Parse()
 	if *helpFlag {
@@ -35,6 +36,7 @@ func main() {
 	var gpgId string
 	var prefix string
 	var psf string
+	var output string
 	if configuration != nil && configuration.GpgPassword != "" {
 		password = configuration.GpgPassword
 	} else {
@@ -65,6 +67,14 @@ func main() {
 	if *optPasswordSafeFile != "" {
 		psf = *optPasswordSafeFile
 	}
+	if configuration != nil {
+		output = configuration.Output
+	}
+	if *optOutputFile != "" {
+		output = *optOutputFile
+	}
+
+	var d *dumper = getDumper(&output, 512)
 
 	var creds *Pass.GpgCredentilas = &Pass.GpgCredentilas{EmailId: gpgId, Passphrase: password}
 	precs, err := Pass.GetPassRecords(prefix, creds)
@@ -73,7 +83,8 @@ func main() {
 	} else {
 		//log.Println("Pass records")
 		for i := range precs {
-			fmt.Printf("Pass record:\n\t%v\n", *precs[i])
+			var formattedString string = fmt.Sprintf("Pass record:\n\t%v\n", *precs[i])
+			d.WriteString(&formattedString)
 		}
 	}
 
@@ -84,10 +95,16 @@ func main() {
 		} else {
 			//log.Println("PasswordSafe records")
 			for i := range psr {
-				fmt.Printf("PasswordSafe record:\n\t%v\n", *psr[i])
+				var formattedString string = fmt.Sprintf("PasswordSafe record:\n\t%v\n", *psr[i])
+				d.WriteString(&formattedString)
 			}
 		}
 	}
-
+	n, err := d.Flush()
+	if err != nil {
+		log.Println("Could not write data", err)
+	} else {
+		log.Printf("Wrote %d bytes of data to %s", n, d.Destination)
+	}
 	log.Println("End of program")
 }
