@@ -24,8 +24,8 @@ func (d *dumper) WriteString(s *string) int {
 func (d *dumper) Flush() (int, error) {
 	if d.Destination == "-" || d.Destination == "" {
 		log.Println("Storing to stdout")
-		fmt.Print(string(d.Destination))
-		return len(d.Destination), nil
+		fmt.Print(string(d.Buffer))
+		return len(d.Buffer), nil
 	} else {
 		log.Println("Storing to ", d.Destination)
 		f, err := os.Create(d.Destination)

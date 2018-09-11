@@ -15,10 +15,12 @@ var configuration *config
 
 func main() {
 
-	optEmailId := getopt.StringLong("email", 'e', "", "Your PGP identity email address")
+	optEmailId := getopt.StringLong("email", 'e', "", "Your PGP identity email address for Pass decryption")
 	optPassPrefix := getopt.StringLong("prefix", 'p', "/", "Which directory in password store should be considered as entry point")
 	optPasswordSafeFile := getopt.StringLong("PasswordSafe", 'P', "", "Exported CSV file with PasswordSafe data")
 	optConfigurationFile := getopt.StringLong("config", 'c', "PassEncBkp.conf", "Configuration file")
+	optEncGpgId := getopt.StringLong("gpgId", 'g', "", "PGP identity email address to encrypt output file")
+	optBase64 := getopt.Bool('b', "Use base64 when encrypting")
 	optOutputFile := getopt.StringLong("output", 'o', "", "Output file to save merged passwords")
 	helpFlag := getopt.Bool('?', "Display help")
 	getopt.Parse()
@@ -37,6 +39,8 @@ func main() {
 	var prefix string
 	var psf string
 	var output string
+	var encGpgId string
+	var base64 bool
 	if configuration != nil && configuration.GpgPassword != "" {
 		password = configuration.GpgPassword
 	} else {
@@ -73,6 +77,16 @@ func main() {
 	if *optOutputFile != "" {
 		output = *optOutputFile
 	}
+	if configuration != nil && configuration.EncGpgId != "" {
+		encGpgId = configuration.EncGpgId
+	}
+	if *optEncGpgId != "" {
+		encGpgId = *optEncGpgId
+	}
+	if configuration != nil {
+		base64 = configuration.Base64
+	}
+	base64 = base64 || *optBase64
 
 	var d *dumper = getDumper(&output, 512)
 
@@ -100,11 +114,29 @@ func main() {
 			}
 		}
 	}
+	if encGpgId != "" {
+		if base64 {
+			encStr, err := Pass.EncryptData2String(&d.Buffer, &encGpgId)
+			if err != nil {
+				log.Println("Cannot encrypt data", err)
+			} else {
+				d.Buffer = []byte(encStr)
+			}
+		} else {
+			encData, err := Pass.EncryptData(&d.Buffer, &encGpgId)
+			if err != nil {
+				log.Println("Cannot encrypt data", err)
+			} else {
+				d.Buffer = *encData
+			}
+		}
+	}
+
 	n, err := d.Flush()
 	if err != nil {
 		log.Println("Could not write data", err)
 	} else {
-		log.Printf("Wrote %d bytes of data to %s", n, d.Destination)
+		log.Printf("\nWrote %d bytes of data to %s", n, d.Destination)
 	}
 	log.Println("End of program")
 }
