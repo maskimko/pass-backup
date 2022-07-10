@@ -1,11 +1,12 @@
 package main
 
 import (
-	"PassEncBkp/Pass"
-	"PassEncBkp/PasswordSafe"
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/maskimko/pass-backup/Pass"
+	"github.com/maskimko/pass-backup/PasswordSafe"
 
 	"github.com/howeyc/gopass"
 	"github.com/pborman/getopt"
